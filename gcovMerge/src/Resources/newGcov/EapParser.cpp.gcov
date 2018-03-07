@@ -1,0 +1,287 @@
+        -:    0:Source:EapParser.cpp
+        -:    0:Graph:./Debug/EapParser.gcno
+        -:    0:Data:./Debug/EapParser.gcda
+        -:    0:Runs:4
+        -:    0:Programs:1
+        -:    1:/*
+        -:    2: * Copyright (c) 2007, 2008, 2009 Cisco Systems, Inc.  This program contains
+        -:    3: * proprietary and confidential information.  All rights reserved except
+        -:    4: * as may be permitted by prior written consent.
+        -:    5: *
+        -:    6: */
+        -:    7:
+        -:    8:#include "EapParser.h"
+        -:    9:#include "EapFramework.h"
+        -:   10:
+        -:   11:// log helper functions
+        -:   12:
+        -:   13:// strings for EAP packet codes
+        -:   14:const char* EapParser::m_eapCodeStr[] = { "None" , "Request" , "Response" , "Success" , "Failure" };
+        -:   15:
+        -:   16:
+        -:   17:EapParser::EapTypeStr_s EapParser::m_eapTypeStr[] =
+        -:   18:{
+        -:   19:    { 0,  "Unknown" },
+        -:   20:    { 1,  "Identity" },
+        -:   21:    { 2,  "Notification" },
+        -:   22:    { 3,  "Nak" },
+        -:   23:    { 4,  "MD5" },
+        -:   24:    { 5,  "OTP" },
+        -:   25:    { 6,  "GTC" },
+        -:   26:    { 13, "EAP-TLS" },
+        -:   27:	{ 17, "LEAP" },
+        -:   28:    { 21, "EAP-TTLS" },
+        -:   29:	{ 25, "PEAP" },
+        -:   30:	{ 26, "EAP-MSCHAP" },
+        -:   31:	{ 43, "EAP-FAST" }
+        -:   32:};
+        -:   33:
+   179968:   34:const char* EapParser::logEapType2Str ( int nType ) const
+        -:   35:{
+        -:   36:    const char* str = NULL;
+        -:   37:
+  1943808:   38:    for ( unsigned int i = 0 ; i < sizeof(m_eapTypeStr) / sizeof (EapParser::EapTypeStr_s) ; i ++ )
+        -:   39:    {
+  1943808:   40:        if ( m_eapTypeStr[i].m_nType == nType )
+        -:   41:        {
+   179968:   42:            str = m_eapTypeStr[i].m_pStr;
+   179968:   43:            break;
+        -:   44:        }
+        -:   45:    }
+        -:   46:
+   179968:   47:    if ( !str )
+        -:   48:    {
+    #####:   49:        str = m_eapTypeStr[0].m_pStr;
+        -:   50:    }
+        -:   51:
+   179968:   52:    return str;
+        -:   53:}
+        -:   54:
+        -:   55://=====================================================================================
+   193984:   56:EapParser::EapParser(int code, Context* ctx) : m_impliedCode (code)
+        -:   57:{
+   193984:   58:    m_pLoggingContext = ctx;
+   193984:   59:    m_nRealLength = 0;
+        -:   60:   
+   193984:   61:    assert (m_impliedCode == EAP_CODE_RESPONSE || m_impliedCode == EAP_CODE_REQUEST); 
+   193984:   62:}
+        -:   63:
+    96960:   64:EapResponseParser::EapResponseParser(Context* ctx) : EapParser(EAP_CODE_RESPONSE, ctx)
+        -:   65:{
+    96960:   66:}
+        -:   67:
+    #####:   68:EapRequestParser::EapRequestParser(Context* ctx) : EapParser(EAP_CODE_REQUEST, ctx)
+        -:   69:{
+    #####:   70:}
+        -:   71:
+    92288:   72:bool EapParser::assignAndValidate(IN Bytes_s& packet)
+        -:   73:{
+    92288:   74:    m_packet.shallowCopy(packet);
+        -:   75:
+    92288:   76:    bool bResult = false;
+        -:   77:
+        -:   78:    // size must be at least EAPheader; client must send only response packets
+        -:   79:    // type field is always present in response packets
+   184576:   80:    if ( (unsigned int)m_packet.m_nSize >= sizeof(EapHeader) && m_packet.m_pData != NULL )
+        -:   81:    {
+    92288:   82:        EapHeader* h = (EapHeader*)m_packet.m_pData;
+    92288:   83:        if ( h->m_nCode == m_impliedCode )
+        -:   84:        {
+        -:   85:            // store real length; from now we will use only this length instead of packet data size
+    92288:   86:            m_nRealLength = ntohs(h->m_nLength);
+    92288:   87:            if ( m_nRealLength <= (int)m_packet.m_nSize )
+        -:   88:            {
+        -:   89:                // validations are ok
+    92288:   90:                bResult = true;
+        -:   91:            }
+        -:   92:            else
+        -:   93:            {
+    #####:   94:                EAPLOG ( __FILE__, __LINE__, AcsDebugLogAAA::VERBOSE, m_pLoggingContext, "EapParser validation - failed: length specified in the packet is greater then received packet size" );
+        -:   95:            }
+        -:   96:        }
+        -:   97:        else
+        -:   98:        {
+    #####:   99:            EAPLOG ( __FILE__, __LINE__, AcsDebugLogAAA::VERBOSE, m_pLoggingContext, "EapParser validation - failed: packet code is other then expected: %d", m_impliedCode );
+        -:  100:        }
+        -:  101:    }
+        -:  102:    else
+        -:  103:    {
+    #####:  104:        EAPLOG ( __FILE__, __LINE__, AcsDebugLogAAA::VERBOSE, m_pLoggingContext, "EapParser validation - failed: packet size less then minimum packet size (5)" );
+        -:  105:    }
+        -:  106:
+    92288:  107:    return bResult;
+        -:  108:}
+        -:  109:
+   167680:  110:int EapParser::type() const
+        -:  111:{
+   167680:  112:    EapHeader* h = (EapHeader*)m_packet.m_pData;
+   167680:  113:    return h->m_nType;
+        -:  114:}
+        -:  115:
+   167744:  116:int EapParser::identifier() const
+        -:  117:{
+   167744:  118:    EapHeader* h = (EapHeader*)m_packet.m_pData;
+   167744:  119:    return h->m_nIdentifier;
+        -:  120:}
+        -:  121:
+    28352:  122:byte_t* EapParser::typeData()
+        -:  123:{
+        -:  124:    // type data is possible only when packet size
+        -:  125:    // don't call this function for packet without specific EAP type data
+    28352:  126:    assert((unsigned int)m_nRealLength >= sizeof(EapHeader));
+        -:  127:
+    28352:  128:    return m_packet.m_pData + sizeof(EapHeader);
+        -:  129:}
+        -:  130:
+    75392:  131:byte_t* EapParser::typeData2()
+        -:  132:{
+    75392:  133:    if((unsigned int)m_nRealLength > sizeof(EapHeader))
+        -:  134:    {
+    75392:  135:        return m_packet.m_pData + sizeof(EapHeader);
+        -:  136:    }
+    #####:  137:    return NULL;
+        -:  138:}
+        -:  139:
+   127424:  140:int EapParser::typeDataSize() const
+        -:  141:{
+        -:  142:    // specific EAP type data is situated after type field
+   127424:  143:    return m_nRealLength - sizeof(EapHeader);
+        -:  144:}
+        -:  145:
+    92288:  146:void EapParser::logPacket () const
+        -:  147:{
+    92288:  148:    EapHeader* h = (EapHeader*)m_packet.m_pData;
+        -:  149:    EAPLOG (__FILE__, __LINE__, AcsDebugLogAAA::INFO, m_pLoggingContext, 
+        -:  150:           "EAP: Recv EAP packet, code=%s, identifier=%d, type=%s, length=%u\n", 
+    92288:  151:            m_eapCodeStr[h->m_nCode] , h->m_nIdentifier , logEapType2Str(h->m_nType) , m_nRealLength );
+    92288:  152:}
+        -:  153:
+        -:  154://=====================================================================================
+     7104:  155:bool EapResponseParser::validateNak()
+        -:  156:{
+        -:  157:    // packet type must be NAK
+     7104:  158:    assert(((EapHeader*)EapParser::m_packet.m_pData)->m_nType == EAP_TYPE_NAK);
+        -:  159:
+     7104:  160:    bool bResult = false;
+        -:  161:
+        -:  162:    // there must be one or more suggested types
+     7104:  163:    if ( typeDataSize() >= 1 )
+        -:  164:    {
+     7104:  165:        bResult = true;
+        -:  166:    }
+        -:  167:    else
+        -:  168:    {
+    #####:  169:        EAPLOG ( __FILE__, __LINE__, AcsDebugLogAAA::VERBOSE, m_pLoggingContext, "EapResponseParser validation - failed: NAK packet with no suggested EAP types" );
+        -:  170:    }
+        -:  171:
+     7104:  172:    return bResult;
+        -:  173:}
+        -:  174:
+     7104:  175:bool EapResponseParser::isNakSuggestionListEmpty()
+        -:  176:{
+        -:  177:    // packet type must be NAK
+     7104:  178:    assert(((EapHeader*)EapParser::m_packet.m_pData)->m_nType == EAP_TYPE_NAK);
+        -:  179:
+        -:  180:    // packet size must be already validated
+     7104:  181:    assert(typeDataSize() >= 1);
+        -:  182:
+        -:  183:    // there must be one or more suggested types
+        -:  184:    // the suggestions list is considered empty if the first type is zero
+     7104:  185:    return ( typeData()[0] == 0 );
+        -:  186:
+        -:  187:}
+        -:  188:
+     7104:  189:void EapResponseParser::getNakSuggestionList( Bytes_s& protocolSuggestionList )
+        -:  190:{
+        -:  191:    // packet type must be NAK
+     7104:  192:    assert(((EapHeader*)EapParser::m_packet.m_pData)->m_nType == EAP_TYPE_NAK);
+     7104:  193:    assert(typeDataSize() >= 1);
+        -:  194:
+        -:  195:    // set the list
+     7104:  196:    protocolSuggestionList.m_pData = typeData();
+     7104:  197:    protocolSuggestionList.m_nSize = typeDataSize();
+     7104:  198:}
+        -:  199:
+        -:  200://=====================================================================================
+    97024:  201:EapRequestComposer::EapRequestComposer(Context* ctx) : EapParser(EAP_CODE_REQUEST, ctx)
+        -:  202:{
+    97024:  203:}
+        -:  204:
+    #####:  205:EapResponseComposer::EapResponseComposer(Context* ctx) : EapParser(EAP_CODE_RESPONSE, ctx)
+        -:  206:{
+    #####:  207:}
+        -:  208:
+     7552:  209:void EapRequestComposer::composeSuccessPacket( int nIndentifier , Bytes_s& requestPacket )
+        -:  210:{
+     7552:  211:    composeSuccessFailurePacket ( EAP_CODE_SUCCESS , nIndentifier , requestPacket );
+     7552:  212:}
+        -:  213:
+     1792:  214:void EapRequestComposer::composeFailurePacket( int nIndentifier , Bytes_s& requestPacket )
+        -:  215:{
+     1792:  216:    composeSuccessFailurePacket ( EAP_CODE_FAILURE , nIndentifier , requestPacket );
+     1792:  217:}
+        -:  218:
+     9344:  219:void EapRequestComposer::composeSuccessFailurePacket( EAP_CODE nCode , int nIndentifier , Bytes_s& requestPacket ) const
+        -:  220:{
+     9344:  221:    int nTotalLength = sizeof(EapHeaderBasic);
+        -:  222:
+        -:  223:    // allocate buffer for packet and fill packet fields
+     9344:  224:    requestPacket.allocate(nTotalLength);
+     9344:  225:    EapHeaderBasic* packet = (EapHeaderBasic*)requestPacket.m_pData ;
+        -:  226:
+     9344:  227:    packet->m_nCode = nCode;
+     9344:  228:    packet->m_nIdentifier = nIndentifier;
+     9344:  229:    packet->m_nLength = htons(sizeof(EapHeaderBasic));
+        -:  230:
+     9344:  231:    EAPLOG ( __FILE__, __LINE__, AcsDebugLogAAA::INFO, m_pLoggingContext, "EAP: Send EAP packet, code=%s, identifier=%d, length=%u\n" , m_eapCodeStr[packet->m_nCode] , packet->m_nIdentifier , sizeof(EapHeaderBasic) );
+     9344:  232:}
+        -:  233:
+    83072:  234:void EapParser::composeChallengePacket( int nIndentifier , EapProtocolType nProtocolType , Bytes_s& innerProtocolRequestData , Bytes_s& requestPacket )
+        -:  235:{
+        -:  236:    // calculate total size of EAP packet = size of EAP packet + size of inner protocol data
+    83072:  237:    int nTotalLength = sizeof(EapHeader) + innerProtocolRequestData.m_nSize;
+        -:  238:
+        -:  239:    // allocate buffer for packet and fill packet fields
+    83072:  240:    requestPacket.allocate(nTotalLength);
+        -:  241:
+    83072:  242:    EapHeader* packet = (EapHeader*)requestPacket.m_pData;
+        -:  243:
+    83072:  244:    packet->m_nCode = EapParser::m_impliedCode;
+    83072:  245:    packet->m_nIdentifier = nIndentifier;
+    83072:  246:    packet->m_nLength = htons(nTotalLength);
+    83072:  247:    packet->m_nType = nProtocolType;
+        -:  248:
+        -:  249:    // copy inner protocol data
+    83072:  250:    memcpy ( requestPacket.m_pData + sizeof(EapHeader) , innerProtocolRequestData.m_pData , innerProtocolRequestData.m_nSize );
+        -:  251:
+    83072:  252:    EAPLOG ( __FILE__, __LINE__, AcsDebugLogAAA::INFO, m_pLoggingContext, "EAP: Send EAP packet, code=%s, identifier=%d, type=%s, length=%u\n" , m_eapCodeStr[packet->m_nCode] , packet->m_nIdentifier , logEapType2Str(packet->m_nType) , nTotalLength );
+    83072:  253:}
+        -:  254:
+     4608:  255:void EapRequestComposer::composeIdentityPacket( int nIndentifier , Bytes_s& requestPacket )
+        -:  256:{
+        -:  257:    // allocate buffer for packet and fill packet fields
+     4608:  258:    requestPacket.allocate( sizeof(EapHeader) );
+        -:  259:
+     4608:  260:    EapHeader* packet = (EapHeader*)requestPacket.m_pData;
+     4608:  261:    packet->m_nCode = EAP_CODE_REQUEST;
+     4608:  262:    packet->m_nIdentifier = nIndentifier;
+     4608:  263:    packet->m_nLength = htons(sizeof(EapHeader));
+     4608:  264:    packet->m_nType = EAP_TYPE_IDENTITY;
+        -:  265:
+     4608:  266:    EAPLOG ( __FILE__, __LINE__, AcsDebugLogAAA::INFO, m_pLoggingContext, "EAP: Send EAP packet, code=%s, identifier=%d, type=%s, length=%u\n" , m_eapCodeStr[packet->m_nCode] , packet->m_nIdentifier , logEapType2Str(packet->m_nType) , sizeof(EapHeader) );
+     4608:  267:    EAPDUMP(__FILE__,__LINE__,NULL,"Eap message:",requestPacket.m_pData,requestPacket.m_nSize);
+     4608:  268:}
+        -:  269:
+        -:  270://=====================================================================================
+        -:  271:
+    #####:  272:bool EapRequestComposer::changeEapSuccessToFailure( OctetBuffer& eapMsg )
+        -:  273:{
+    #####:  274:    if (eapMsg[0] == EAP_CODE_SUCCESS)
+        -:  275:    {
+    #####:  276:        eapMsg[0] = EAP_CODE_FAILURE;
+    #####:  277:        return true;
+        -:  278:    }
+        -:  279:
+    #####:  280:    return false;
+        -:  281:}
+        -:  282:
