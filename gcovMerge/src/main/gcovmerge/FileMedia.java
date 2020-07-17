@@ -7,7 +7,6 @@ import java.nio.file.Paths;
 
 /**
  * FileMedia.
- *
  */
 public class FileMedia implements IMedia {
 	
